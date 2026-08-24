@@ -215,7 +215,6 @@ class AngularLanguageServer(SolidLanguageServer):
     """
 
     NG_SERVER_READY_TIMEOUT = 30.0
-    IGNORED_WARM_UP_DIRS = frozenset({"node_modules", "dist", ".angular", ".git", "out-tsc"})
     TS_SERVER_READY_TIMEOUT = 10.0
     HTML_SERVER_READY_TIMEOUT = 10.0
 
@@ -594,56 +593,51 @@ class AngularLanguageServer(SolidLanguageServer):
         open. Without this, `projectLoadingFinish` arrives only when a real query happens (on one real
         app: never sooner than 71s after startup, median ~8 minutes), so the *first* symbol query runs
         against an unresolved project and cross-file references come back silently incomplete. Opening
-        one .ts file up front triggers the load so the wait below is actually waiting for something.
+        one .ts file up front triggers the load, which is what makes the wait below meaningful.
         """
-        seed = self._find_seed_source_file()
+        seed = self._find_representative_source_file(self.repository_root_path)
         if seed is None:
-            log.info("No .ts file found for ngserver warm-up; skipping")
+            log.info("No TypeScript project to warm ngserver up with; skipping the project load wait")
             self.server_ready.set()
             return
 
-        uri = seed.as_uri()
+        log.info("Opening %s to trigger the ngserver project load", seed)
         try:
-            text = seed.read_text(encoding=self._encoding, errors="replace")
-        except OSError as e:
-            log.info("Could not read %s for ngserver warm-up (%s); skipping", seed, e)
+            with self.open_file(os.path.relpath(seed, self.repository_root_path)):
+                if not self.server_ready.wait(timeout=self.NG_SERVER_READY_TIMEOUT):
+                    log.info("Timeout waiting for ngserver project load; proceeding anyway")
+                    self.server_ready.set()
+        except Exception as e:
+            # The warm-up is an optimisation; a seed file we cannot read is no reason to fail startup.
+            log.warning("ngserver warm-up via %s failed (%s); proceeding anyway", seed, e)
             self.server_ready.set()
-            return
 
-        self.server.notify.did_open_text_document(
-            {  # ty: ignore[invalid-argument-type]  # shape matches the TypedDict
-                LSPConstants.TEXT_DOCUMENT: {
-                    LSPConstants.URI: uri,
-                    LSPConstants.LANGUAGE_ID: "typescript",
-                    LSPConstants.VERSION: 0,
-                    LSPConstants.TEXT: text,
-                }
-            }
-        )
-        try:
-            if not self.server_ready.wait(timeout=self.NG_SERVER_READY_TIMEOUT):
-                log.info("Timeout waiting for ngserver project load; proceeding anyway")
-                self.server_ready.set()
-        finally:
-            self.server.notify.did_close_text_document(
-                {LSPConstants.TEXT_DOCUMENT: {LSPConstants.URI: uri}}  # ty: ignore[invalid-argument-type]
-            )
+    @override
+    def _find_representative_source_file(self, directory: str) -> str | None:
+        """The cheapest .ts file that makes ngserver resolve the project: prefer a component, else any.
 
-    def _find_seed_source_file(self) -> pathlib.Path | None:
-        """Cheapest .ts file that makes ngserver resolve the project: prefer a component, else any."""
-        fallback: pathlib.Path | None = None
-        for dirpath, dirnames, filenames in os.walk(self.repository_root_path):
+        Returns None if the directory contains no ``tsconfig.json``: without one ngserver never loads a
+        project and so never sends ``projectLoadingFinish``, and opening a file would only burn the
+        full ``NG_SERVER_READY_TIMEOUT`` on every startup (measured: 31s vs 1s when skipped).
+        """
+        component: str | None = None
+        fallback: str | None = None
+        has_tsconfig = False
+        for dirpath, dirnames, filenames in os.walk(directory):
             # prune in place so a big node_modules is never descended into
-            dirnames[:] = [d for d in dirnames if d not in self.IGNORED_WARM_UP_DIRS and not d.startswith(".")]
-            for name in filenames:
+            dirnames[:] = [d for d in dirnames if not self.is_ignored_dirname(d)]
+            has_tsconfig = has_tsconfig or "tsconfig.json" in filenames
+            for name in sorted(filenames):
                 if not name.endswith(".ts") or name.endswith((".d.ts", ".spec.ts")):
                     continue
-                path = pathlib.Path(dirpath, name)
-                if name.endswith(".component.ts"):
-                    return path
-                if fallback is None:
+                path = os.path.join(dirpath, name)
+                if name.endswith(".component.ts") and component is None:
+                    component = path
+                elif fallback is None:
                     fallback = path
-        return fallback
+            if has_tsconfig and component is not None:
+                return component
+        return (component or fallback) if has_tsconfig else None
 
     @override
     def stop(self, shutdown_timeout: float = 5.0) -> None:
