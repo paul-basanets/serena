@@ -45,6 +45,10 @@ Status of the `main` branch. Changes prior to the next official version change w
     rest of the session (#1871)
   - Fix: Exceptions raised during `LanguageServerManager.start` did not stop the language server subprocess if it was
     already started (#1949)
+  - Fix: the Angular language server loads the project lazily, on the first document open, so Serena's
+    startup wait for `projectLoadingFinish` regularly hit its timeout and the first symbol query ran
+    against an unresolved project, silently returning incomplete cross-file results. Serena now opens
+    one `.ts` file to trigger the load
   - Fix: Dart's `$/analyzerStatus` notifications were logged as unhandled-method warnings during analysis (#1855)
   - Fix: `DartLanguageServer._start_server` discarded both `$/analyzerStatus` and
     `experimental/serverStatus`, the two notifications the Dart analysis server sends to report
