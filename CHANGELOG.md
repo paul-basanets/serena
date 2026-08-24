@@ -35,6 +35,11 @@ Status of the `main` branch. Changes prior to the next official version change w
 * Tools:
   - `replace_content` and `replace_in_files`: `mode` now defaults to `"literal"` instead of being a
     required parameter; omitting it was a frequent cause of failed calls
+  - Fix: binary files swept up by a scan of non-code files (`search_for_pattern` with
+    `restrict_search_to_code_files=False`) were run through encoding detection and logged as read
+    errors, one entry per file and call (2023 in one real project's logs); they are now recognised as
+    binary and skipped silently. Project file reads go through the same code path again, so files not
+    in the configured encoding stay readable and searchable via the detection fallback
 
 * Language Servers:
   - Add FreeBSD mapping to platform detection

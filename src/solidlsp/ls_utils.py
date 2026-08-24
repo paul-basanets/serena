@@ -2,6 +2,7 @@
 This file contains various utility functions like I/O operations, handling paths, etc.
 """
 
+import codecs
 import gzip
 import hashlib
 import logging
@@ -386,6 +387,22 @@ class FileUtils:
 
     ArchiveType = Literal["tar", "gztar", "bztar", "xztar", "zip", "zip.gz", "gz", "binary"]
 
+    #: number of leading bytes inspected by `is_binary_file`
+    BINARY_SNIFF_SIZE = 8192
+
+    @staticmethod
+    def is_binary_file(file_path: str) -> bool:
+        """
+        :param file_path: the path of an existing file
+        :return: whether the file looks binary, i.e. whether its leading bytes contain a NUL
+            (git's heuristic). UTF-16/32-encoded text legitimately contains NULs, so a BOM overrides.
+        """
+        with open(file_path, "rb") as inp_file:
+            head = inp_file.read(FileUtils.BINARY_SNIFF_SIZE)
+        if head.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE, codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
+            return False
+        return b"\0" in head
+
     @staticmethod
     def read_file(file_path: str, encoding: str) -> str:
         """
@@ -401,21 +418,25 @@ class FileUtils:
             log.error(f"Failed to read '{file_path}': File does not exist.")
             raise FileNotFoundError(f"File read '{file_path}' failed: File does not exist.")
         try:
-            try:
-                with open(file_path, encoding=encoding) as inp_file:
-                    return inp_file.read()
-            except UnicodeDecodeError as ude:
-                results = charset_normalizer.from_path(file_path)
-                match = results.best()
-                if match:
-                    log.warning(
-                        f"Could not decode {file_path} with encoding='{encoding}'; using best match '{match.encoding}' instead",
-                    )
-                    # Decoding the raw bytes bypasses the universal-newline translation that the
-                    # open() call above applies, so normalize explicitly to keep both paths equivalent.
-                    decoded = match.raw.decode(match.encoding)
-                    return decoded.replace("\r\n", "\n").replace("\r", "\n")
-                raise ude
+            with open(file_path, encoding=encoding) as inp_file:
+                return inp_file.read()
+        except UnicodeDecodeError as ude:
+            if FileUtils.is_binary_file(file_path):
+                # a binary file swept up by a scan of non-code files: encoding detection cannot help,
+                # and whether the failure matters is the caller's decision, so don't log it as an error
+                log.debug(f"Cannot read '{file_path}': file is binary")
+                raise
+            match = charset_normalizer.from_path(file_path).best()
+            if match is None:
+                log.error(f"Failed to read '{file_path}' with encoding '{encoding}': {ude}")
+                raise
+            log.warning(
+                f"Could not decode {file_path} with encoding='{encoding}'; using best match '{match.encoding}' instead",
+            )
+            # Decoding the raw bytes bypasses the universal-newline translation that the
+            # open() call above applies, so normalize explicitly to keep both paths equivalent.
+            decoded = match.raw.decode(match.encoding)
+            return decoded.replace("\r\n", "\n").replace("\r", "\n")
         except Exception as exc:
             log.error(f"Failed to read '{file_path}' with encoding '{encoding}': {exc}")
             raise exc

@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING, Self
 
 from serena.jetbrains import jetbrains_types as jb
+from solidlsp.ls_utils import FileUtils
 
 if TYPE_CHECKING:
     from serena.project import Project
@@ -50,8 +51,9 @@ class LocalProjectFileProxy(FileProxy):
 
     def get_contents(self) -> str:
         abs_path = os.path.join(self._project.project_root, self._relative_path)
-        with open(abs_path, encoding=self._project.project_config.encoding) as f:
-            return f.read()
+        # via FileUtils to retain the encoding-detection fallback for files that are not in the
+        # configured encoding (binary files raise, and are skipped by the scanning callers)
+        return FileUtils.read_file(abs_path, self._project.project_config.encoding)
 
     def get_relative_path(self) -> str:
         return self._relative_path

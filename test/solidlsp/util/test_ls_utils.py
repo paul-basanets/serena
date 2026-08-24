@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import codecs
 import hashlib
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -144,3 +146,33 @@ def test_get_platform_id_unknown_platform_still_raises() -> None:
     ):
         with pytest.raises(SolidLSPException):
             PlatformUtils.get_platform_id()
+
+def test_read_file_binary_is_skipped_without_encoding_detection(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """
+    Undecodable binary files (e.g. a .png swept up by a scan of non-code files) must still raise, but
+    without an entry in the error log and without the cost of charset detection, which cannot help.
+    """
+    file_path = tmp_path / "icon.png"
+    file_path.write_bytes(b"\x89PNG\r\n\x1a\n" + bytes(range(256)) * 4)
+
+    with caplog.at_level(logging.DEBUG), patch("charset_normalizer.from_path") as from_path:
+        with pytest.raises(UnicodeDecodeError):
+            FileUtils.read_file(str(file_path), "utf-8")
+
+    from_path.assert_not_called()
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+    assert any("icon.png" in r.getMessage() for r in caplog.records if r.levelno == logging.DEBUG)
+
+
+@pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"])
+def test_read_file_bom_encoded_text_is_not_mistaken_for_binary(tmp_path: Path, encoding: str) -> None:
+    """UTF-16/32 text contains NUL bytes, so the binary check must defer to the BOM and let the fallback run."""
+    lines = ["import os", "", "def f():", "    return 1"]
+    file_path = tmp_path / f"config_{encoding}.py"
+    bom = {"utf-16-le": codecs.BOM_UTF16_LE, "utf-16-be": codecs.BOM_UTF16_BE}.get(encoding) or (
+        codecs.BOM_UTF32_LE if encoding == "utf-32-le" else codecs.BOM_UTF32_BE
+    )
+    file_path.write_bytes(bom + "\r\n".join(lines).encode(encoding))
+
+    assert not FileUtils.is_binary_file(str(file_path))
+    assert FileUtils.read_file(str(file_path), "utf-8").splitlines() == lines
