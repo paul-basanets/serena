@@ -414,9 +414,9 @@ class LspApi(FacadeApi):
         # the symbol overview is capable of working with both files and directories, but we require a file
         file_path = os.path.join(self._get_project().project_root, relative_path)
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File or directory {relative_path} does not exist in the project.")
+            raise FileNotFoundError(f"File {relative_path} does not exist in the project.")
         if os.path.isdir(file_path):
-            raise ValueError(f"Expected a file path, but got a directory path: {relative_path}. ")
+            raise ValueError(f"Expected a file path, but got a directory path: {relative_path}; use list_dir to list its files.")
         if not symbol_retriever.can_analyze_file(relative_path):
             raise ValueError(
                 f"Cannot extract symbols from file {relative_path}. "
