@@ -70,6 +70,7 @@ from solidlsp.language_servers.typescript_language_server import (
 from solidlsp.language_servers.vscode_html_language_server import VsCodeHtmlLanguageServer
 from solidlsp.ls import LanguageServerDependencyProvider, LSPFileBuffer, SolidLanguageServer
 from solidlsp.ls_config import FilenameMatcher, LanguageServerConfig, LanguageServerId
+from solidlsp.lsp_protocol_handler.lsp_constants import LSPConstants
 from solidlsp.lsp_protocol_handler.lsp_types import DocumentSymbol, SymbolInformation
 from solidlsp.lsp_protocol_handler.server import ProcessLaunchInfo
 from solidlsp.settings import SolidLSPSettings
@@ -213,7 +214,8 @@ class AngularLanguageServer(SolidLanguageServer):
         * ``npm_registry``: optional alternative npm registry URL.
     """
 
-    NG_SERVER_READY_TIMEOUT = 10.0
+    NG_SERVER_READY_TIMEOUT = 30.0
+    IGNORED_WARM_UP_DIRS = frozenset({"node_modules", "dist", ".angular", ".git", "out-tsc"})
     TS_SERVER_READY_TIMEOUT = 10.0
     HTML_SERVER_READY_TIMEOUT = 10.0
 
@@ -574,15 +576,7 @@ class AngularLanguageServer(SolidLanguageServer):
             init_response = self.server.send.initialize(init_params)
             log.debug("Angular LS initialize response: %s", init_response)
             self.server.notify.initialized({})
-            # ngserver loads the Angular compiler asynchronously after `initialized`. Wait briefly
-            # for projectLoadingFinish, then proceed regardless — operations queue inside ngserver.
-            # ngserver eagerly resolves the project once projectLoadingFinish fires; we previously
-            # ran a proactive .ts didOpen/didClose pass but empirical testing on real Angular
-            # projects (181 .ts / 85 .html) showed it added ~4s to cold start without improving
-            # first-query correctness or latency, so it has been removed.
-            if not self.server_ready.wait(timeout=self.NG_SERVER_READY_TIMEOUT):
-                log.info("Timeout waiting for ngserver project load; proceeding anyway")
-                self.server_ready.set()
+            self._warm_up_project()
         except Exception:
             self._stop_typescript_server()
             self._stop_html_server()
@@ -591,6 +585,65 @@ class AngularLanguageServer(SolidLanguageServer):
             except Exception as e:
                 log.warning("Error stopping ngserver during startup-failure cleanup: %s", e)
             raise
+
+    def _warm_up_project(self) -> None:
+        """
+        Resolve the Angular project before the first query.
+
+        ngserver does not load the project on `initialized` — it loads it lazily, on the first document
+        open. Without this, `projectLoadingFinish` arrives only when a real query happens (on one real
+        app: never sooner than 71s after startup, median ~8 minutes), so the *first* symbol query runs
+        against an unresolved project and cross-file references come back silently incomplete. Opening
+        one .ts file up front triggers the load so the wait below is actually waiting for something.
+        """
+        seed = self._find_seed_source_file()
+        if seed is None:
+            log.info("No .ts file found for ngserver warm-up; skipping")
+            self.server_ready.set()
+            return
+
+        uri = seed.as_uri()
+        try:
+            text = seed.read_text(encoding=self._encoding, errors="replace")
+        except OSError as e:
+            log.info("Could not read %s for ngserver warm-up (%s); skipping", seed, e)
+            self.server_ready.set()
+            return
+
+        self.server.notify.did_open_text_document(
+            {  # ty: ignore[invalid-argument-type]  # shape matches the TypedDict
+                LSPConstants.TEXT_DOCUMENT: {
+                    LSPConstants.URI: uri,
+                    LSPConstants.LANGUAGE_ID: "typescript",
+                    LSPConstants.VERSION: 0,
+                    LSPConstants.TEXT: text,
+                }
+            }
+        )
+        try:
+            if not self.server_ready.wait(timeout=self.NG_SERVER_READY_TIMEOUT):
+                log.info("Timeout waiting for ngserver project load; proceeding anyway")
+                self.server_ready.set()
+        finally:
+            self.server.notify.did_close_text_document(
+                {LSPConstants.TEXT_DOCUMENT: {LSPConstants.URI: uri}}  # ty: ignore[invalid-argument-type]
+            )
+
+    def _find_seed_source_file(self) -> pathlib.Path | None:
+        """Cheapest .ts file that makes ngserver resolve the project: prefer a component, else any."""
+        fallback: pathlib.Path | None = None
+        for dirpath, dirnames, filenames in os.walk(self.repository_root_path):
+            # prune in place so a big node_modules is never descended into
+            dirnames[:] = [d for d in dirnames if d not in self.IGNORED_WARM_UP_DIRS and not d.startswith(".")]
+            for name in filenames:
+                if not name.endswith(".ts") or name.endswith((".d.ts", ".spec.ts")):
+                    continue
+                path = pathlib.Path(dirpath, name)
+                if name.endswith(".component.ts"):
+                    return path
+                if fallback is None:
+                    fallback = path
+        return fallback
 
     @override
     def stop(self, shutdown_timeout: float = 5.0) -> None:
