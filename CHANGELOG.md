@@ -64,6 +64,10 @@ Status of the `main` branch. Changes prior to the next official version change w
     successful Serena call. Add a `serena-hooks reset` command and a `PostToolUse` example matched to
     Serena's own tools to close the gap (#1852)
 
+* Tools:
+  - `replace_content` and `replace_in_files`: `mode` now defaults to `"literal"` instead of being a
+    required parameter; omitting it was a frequent cause of failed calls
+
 * Language Servers:
   - Fix: High-level document symbol cache was not invalidated when the LS-specific low-level result 
     version changed
