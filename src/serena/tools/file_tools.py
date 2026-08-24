@@ -180,7 +180,7 @@ class ReplaceContentTool(EditingToolWithDiagnostics):
         relative_path: str,
         needle: str,
         repl: str,
-        mode: Literal["literal", "regex"],
+        mode: Literal["literal", "regex"] = "literal",
         allow_multiple_occurrences: bool = False,
     ) -> str:
         r"""
@@ -201,7 +201,7 @@ class ReplaceContentTool(EditingToolWithDiagnostics):
         :param repl: the replacement string (verbatim).
             If mode is "regex", the string can contain backreferences to matched groups in the needle regex,
             specified using the syntax $!1, $!2, etc. for groups 1, 2, etc.
-        :param mode: either "literal" or "regex", specifying how the `needle` parameter is to be interpreted.
+        :param mode: either "literal" (the default) or "regex", specifying how the `needle` parameter is to be interpreted.
         :param allow_multiple_occurrences: whether to allow matching and replacing multiple occurrences.
             If false and multiple occurrences are found, an error will be returned
         """
@@ -224,7 +224,7 @@ class ReplaceInFilesTool(EditingToolWithDiagnostics):
         self,
         needle: str,
         repl: str,
-        mode: Literal["literal", "regex"],
+        mode: Literal["literal", "regex"] = "literal",
         relative_path: str = "",
         paths_include_glob: str = "",
         paths_exclude_glob: str = "",
@@ -254,7 +254,7 @@ class ReplaceInFilesTool(EditingToolWithDiagnostics):
             syntax with DOTALL and MULTILINE) to search for
         :param repl: the replacement string. In regex mode, backreferences to matched groups can be
             specified as $!1, $!2, etc.
-        :param mode: either "literal" or "regex", specifying how `needle` is to be interpreted
+        :param mode: either "literal" (the default) or "regex", specifying how `needle` is to be interpreted
         :param relative_path: only consider this file or directory (default: the whole project)
         :param paths_include_glob: optional glob (relative to the project root, e.g. "src/**/*.java")
             restricting which files are considered
