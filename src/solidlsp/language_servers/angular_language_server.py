@@ -213,7 +213,9 @@ class AngularLanguageServer(SolidLanguageServer):
         * ``npm_registry``: optional alternative npm registry URL.
     """
 
-    NG_SERVER_READY_TIMEOUT = 10.0
+    # ngserver loads the Angular compiler after `initialized`; on a real app (>150 components) this
+    # regularly exceeds 10s, and proceeding early yields incomplete cross-file reference results.
+    NG_SERVER_READY_TIMEOUT = 45.0
     TS_SERVER_READY_TIMEOUT = 10.0
     HTML_SERVER_READY_TIMEOUT = 10.0
 
