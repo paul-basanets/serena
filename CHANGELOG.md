@@ -264,6 +264,9 @@ Status of the `main` branch. Changes prior to the next official version change w
     `restrict_search_to_code_files=False`) were run through encoding detection and logged as read
     errors, one entry per file and call (2023 in one real project's logs); they are now recognised as
     binary and skipped silently
+  - Fix: `get_symbols_overview` rejected directories with an error that advertised them
+    ("File or directory X does not exist in the project"); it now names only files and points to
+    `list_dir`
 
 * Memories:
   - Fix: `move_memory` / rename only checked write access on the destination name, so a tool-context
