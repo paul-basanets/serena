@@ -102,9 +102,9 @@ class GetSymbolsOverviewTool(Tool, ToolMarkerSymbolicRead):
         # but we want to ensure that the user provides a file path.
         file_path = os.path.join(self.project.project_root, relative_path)
         if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File or directory {relative_path} does not exist in the project.")
+            raise FileNotFoundError(f"File {relative_path} does not exist in the project.")
         if os.path.isdir(file_path):
-            raise ValueError(f"Expected a file path, but got a directory path: {relative_path}. ")
+            raise ValueError(f"Expected a file path, but got a directory path: {relative_path}; use list_dir to list its files.")
         if not symbol_retriever.can_analyze_file(relative_path):
             raise ValueError(
                 f"Cannot extract symbols from file {relative_path}. Active language servers: {[l.value for l in self.agent.get_active_language_server_ids()]}"

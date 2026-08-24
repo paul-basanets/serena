@@ -40,6 +40,9 @@ Status of the `main` branch. Changes prior to the next official version change w
     errors, one entry per file and call (2023 in one real project's logs); they are now recognised as
     binary and skipped silently. Project file reads go through the same code path again, so files not
     in the configured encoding stay readable and searchable via the detection fallback
+  - Fix: `get_symbols_overview` rejected directories with an error that advertised them
+    ("File or directory X does not exist in the project"); it now names only files and points to
+    `list_dir`
 
 * Language Servers:
   - Add FreeBSD mapping to platform detection

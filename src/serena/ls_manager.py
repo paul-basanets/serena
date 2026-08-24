@@ -176,8 +176,9 @@ class LanguageServerManager:
         """:param relative_path: relative path to a file"""
         ls: SolidLanguageServer | None = None
         if len(self._language_servers) > 1:
-            if os.path.isdir(relative_path):
-                raise ValueError(f"Expected a file path, but got a directory: {relative_path}")
+            # the path is relative to the project root, which is not necessarily the process' working directory
+            if os.path.isdir(os.path.join(self._default_language_server.repository_root_path, relative_path)):
+                raise ValueError(f"Expected a file path, but got a directory path: {relative_path}")
             ls = self._get_suitable_language_server(relative_path)
         if ls is None:
             ls = self._default_language_server
