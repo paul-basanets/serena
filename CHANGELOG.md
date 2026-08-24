@@ -100,6 +100,8 @@ Status of the `main` branch. Changes prior to the next official version change w
     temp-file-plus-`os.replace` helper that the memory writes already use. The helper resolves
     symlinks first, so a symlinked file is still written through to its target rather than being
     replaced by a regular file (#1958)
+  - `replace_content` and `replace_in_files`: `mode` now defaults to `"literal"` instead of being a
+    required parameter; omitting it was a frequent cause of failed calls
 
 * Memories:
   - Fix: `move_memory` / rename only checked write access on the destination name, so a tool-context
